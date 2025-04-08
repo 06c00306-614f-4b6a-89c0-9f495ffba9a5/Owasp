@@ -1,3 +1,9 @@
+## Introduction
+- Personal Notes with Web Security Academy Notes Combined using Artificial Intelligence.
+- This repository is actively maintained by Security Researchers who are experts in the field.
+- This repository is a place where developers and penetration testers can use to assist with operations.
+- This is only the start of something big, our goal is put hacktricks out of business
+
 ![image](https://github.com/user-attachments/assets/5fb062f3-9cf2-4127-b597-db64d5641913)
 
 <br>
