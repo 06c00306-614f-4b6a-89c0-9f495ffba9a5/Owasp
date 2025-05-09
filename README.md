@@ -3,6 +3,7 @@
 - This repository is actively maintained by Security Researchers who are experts in the field.
 - This repository contains the information required to assist with application security operations.
 - Hope you enjoy, please drop us a star if you would like more content.
+- If you want to become a contributor, send me an email at `secured.aus@gmail.com`.
 
 ## Contributors
 - Fakechips: https://github.com/Fakechippies
