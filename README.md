@@ -5,7 +5,7 @@
 - This is only the start of something big, our goal is put hacktricks out of business.
 - Hope you enjoy, please drop us a star if you would like more content.
 
-## Contributers
+## Contributors
 - Fakechips: https://github.com/Fakechippies
 - Raman: https://github.com/zeroxv6
 
