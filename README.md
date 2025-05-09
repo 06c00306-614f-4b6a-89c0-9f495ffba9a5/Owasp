@@ -2,7 +2,6 @@
 - Personal Notes with Web Security Academy Notes Combined using Artificial Intelligence.
 - This repository is actively maintained by Security Researchers who are experts in the field.
 - This repository contains the information required to assist with application security operations.
-- This is only the start of something big, our goal is put hacktricks out of business.
 - Hope you enjoy, please drop us a star if you would like more content.
 
 ## Contributors
